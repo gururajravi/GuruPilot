@@ -39,7 +39,37 @@ class ExpenseService {
   }
 
   static double get totalExpense {
-    return _box.values.fold<double>(0, (sum, expense) => sum + expense.amount);
+    return _box.values.fold<double>(
+      0,
+      (sum, expense) => sum + expense.amount,
+    );
+  }
+
+  static Future<int> importExpenses(
+    Iterable<Expense> expenses,
+  ) async {
+    final existingTransactionIds = _box.values
+        .map((expense) => expense.transactionId)
+        .whereType<String>()
+        .toSet();
+
+    final newExpenses = expenses.where((expense) {
+      final transactionId = expense.transactionId;
+
+      if (transactionId == null || transactionId.trim().isEmpty) {
+        return true;
+      }
+
+      return !existingTransactionIds.contains(transactionId);
+    }).toList();
+
+    if (newExpenses.isEmpty) {
+      return 0;
+    }
+
+    await _box.addAll(newExpenses);
+
+    return newExpenses.length;
   }
 
   static Future<void> clearExpenses() async {

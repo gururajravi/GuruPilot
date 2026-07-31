@@ -27,18 +27,23 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   final List<String> categories = const [
     'Food',
-    'Fuel',
+    'Guru Office Food',
+    'Bike',
     'Grocery',
+    'Car',
+    'Miscellaneous',
+    'Guru Personal',
+    'Ananya Personal',
     'Shopping',
     'Bills',
     'Travel',
+    'Fuel',
     'Medical',
     'Entertainment',
     'Personal',
     'Other',
     'Uncategorized',
   ];
-
   final List<String> paymentMethods = const [
     'UPI',
     'Cash',
@@ -183,6 +188,18 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         return '👤 Personal';
       case 'Uncategorized':
         return '❓ Uncategorized';
+      case 'Guru Office Food':
+        return '🍱 Guru Office Food';
+      case 'Bike':
+        return '🏍️ Bike';
+      case 'Car':
+        return '🚗 Car';
+      case 'Miscellaneous':
+        return '📦 Miscellaneous';
+      case 'Guru Personal':
+        return '👤 Guru Personal';
+      case 'Ananya Personal':
+        return '👤 Ananya Personal';
       default:
         return '📦 Other';
     }

@@ -23,6 +23,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  String _selectedMonth = 'All';
   DateTime? _selectedDate;
 
   List<String> get _categories {
@@ -36,6 +37,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return ['All', ...categories];
   }
 
+  List<String> get _months {
+    final months = widget.expenses
+        .map((expense) => _monthKey(expense.date))
+        .toSet()
+        .toList();
+
+    months.sort((first, second) => second.compareTo(first));
+
+    return ['All', ...months];
+  }
+
   List<Expense> get _filteredExpenses {
     final filtered = widget.expenses.where((expense) {
       final titleMatches = expense.title.toLowerCase().contains(
@@ -45,15 +57,49 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       final categoryMatches =
           _selectedCategory == 'All' || expense.category == _selectedCategory;
 
+      final monthMatches =
+          _selectedMonth == 'All' || _monthKey(expense.date) == _selectedMonth;
+
       final dateMatches =
           _selectedDate == null || _isSameDate(expense.date, _selectedDate!);
 
-      return titleMatches && categoryMatches && dateMatches;
+      return titleMatches && categoryMatches && monthMatches && dateMatches;
     }).toList();
 
     filtered.sort((first, second) => second.date.compareTo(first.date));
 
     return filtered;
+  }
+
+  String _monthKey(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}';
+  }
+
+  String _monthLabel(String monthKey) {
+    if (monthKey == 'All') {
+      return 'All Months';
+    }
+
+    final parts = monthKey.split('-');
+    final year = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+
+    const monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${monthNames[month - 1]} $year';
   }
 
   bool _isSameDate(DateTime first, DateTime second) {
@@ -74,6 +120,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
     setState(() {
       _selectedDate = pickedDate;
+      _selectedMonth = _monthKey(pickedDate);
     });
   }
 
@@ -83,6 +130,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     setState(() {
       _searchQuery = '';
       _selectedCategory = 'All';
+      _selectedMonth = 'All';
       _selectedDate = null;
     });
   }
@@ -165,6 +213,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     switch (category.toLowerCase()) {
       case 'food':
         return '🍔';
+      case 'guru office food':
+        return '🍱';
+      case 'grocery':
+        return '🛍️';
+      case 'bike':
+        return '🏍️';
+      case 'car':
+        return '🚗';
       case 'fuel':
         return '⛽';
       case 'shopping':
@@ -177,6 +233,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         return '💊';
       case 'entertainment':
         return '🎬';
+      case 'guru personal':
+      case 'ananya personal':
+        return '👤';
       default:
         return '📦';
     }
@@ -258,7 +317,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         items: _categories.map((category) {
                           return DropdownMenuItem<String>(
                             value: category,
-                            child: Text(category),
+                            child: Text(
+                              category,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           );
                         }).toList(),
                         onChanged: (value) {
@@ -271,32 +333,69 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    OutlinedButton.icon(
-                      onPressed: _selectFilterDate,
-                      icon: const Icon(Icons.calendar_month),
-                      label: Text(
-                        _selectedDate == null
-                            ? 'Date'
-                            : '${_selectedDate!.day}/'
-                                  '${_selectedDate!.month}',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(110, 56),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedMonth,
+                        decoration: InputDecoration(
+                          labelText: 'Month',
+                          prefixIcon: const Icon(Icons.calendar_view_month),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        items: _months.map((month) {
+                          return DropdownMenuItem<String>(
+                            value: month,
+                            child: Text(
+                              _monthLabel(month),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+
+                          setState(() {
+                            _selectedMonth = value;
+
+                            if (_selectedDate != null &&
+                                value != 'All' &&
+                                _monthKey(_selectedDate!) != value) {
+                              _selectedDate = null;
+                            }
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
-                if (_searchQuery.isNotEmpty ||
-                    _selectedCategory != 'All' ||
-                    _selectedDate != null)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _clearFilters,
-                      icon: const Icon(Icons.filter_alt_off),
-                      label: const Text('Clear filters'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _selectFilterDate,
+                      icon: const Icon(Icons.event),
+                      label: Text(
+                        _selectedDate == null
+                            ? 'Specific date'
+                            : _formatDate(_selectedDate!),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(150, 48),
+                      ),
                     ),
-                  ),
+                    const Spacer(),
+                    if (_searchQuery.isNotEmpty ||
+                        _selectedCategory != 'All' ||
+                        _selectedMonth != 'All' ||
+                        _selectedDate != null)
+                      TextButton.icon(
+                        onPressed: _clearFilters,
+                        icon: const Icon(Icons.filter_alt_off),
+                        label: const Text('Clear filters'),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -307,7 +406,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 Expanded(
                   child: Text(
                     '${filteredExpenses.length} expense'
-                    '${filteredExpenses.length == 1 ? '' : 's'}',
+                    '${filteredExpenses.length == 1 ? '' : 's'}'
+                    '${_selectedMonth == 'All' ? '' : ' • ${_monthLabel(_selectedMonth)}'}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),

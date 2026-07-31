@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'data/historical_expenses_2026.dart';
 import 'models/expense.dart';
 import 'screens/home_screen.dart';
 import 'services/expense_service.dart';
@@ -15,8 +16,14 @@ Future<void> main() async {
   }
 
   await Hive.openBox<Expense>(ExpenseService.boxName);
+
+  final importedCount = await ExpenseService.importExpenses(
+    buildHistoricalExpenses2026(),
+  );
+
   final expenseBox = Hive.box<Expense>(ExpenseService.boxName);
 
+  debugPrint('Historical expenses imported: $importedCount');
   debugPrint('Hive box name: ${expenseBox.name}');
   debugPrint('Hive box length: ${expenseBox.length}');
   debugPrint('Hive box keys: ${expenseBox.keys.toList()}');
@@ -25,9 +32,11 @@ Future<void> main() async {
     debugPrint(
       'Loaded expense: '
       '${expense.title}, ₹${expense.amount}, '
-      '${expense.category}, ${expense.date}',
+      '${expense.category}, ${expense.date}, '
+      '${expense.source}, ${expense.transactionId}',
     );
   }
+
   runApp(const GuruPilotApp());
 }
 
