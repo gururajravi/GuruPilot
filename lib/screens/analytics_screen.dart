@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../models/expense.dart';
 import '../services/analytics_service.dart';
+import '../widgets/monthly_trend_card.dart';
+import '../widgets/spending_insights_card.dart';
+import '../widgets/financial_health_card.dart';
 
 class AnalyticsScreen extends StatelessWidget {
   final List<Expense> expenses;
@@ -95,6 +98,22 @@ class AnalyticsScreen extends StatelessWidget {
                     categoryTotals: categoryTotals,
                     total: total,
                   ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Monthly Trend',
+                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  MonthlyTrendCard(expenses: expenses),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Smart Insights',
+                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  SpendingInsightsCard(expenses: expenses),
+                  const SizedBox(height: 24),
+                  FinancialHealthCard(expenses: expenses),
                   const SizedBox(height: 24),
                   const Text(
                     'Highest Expense',

@@ -15,7 +15,19 @@ Future<void> main() async {
   }
 
   await Hive.openBox<Expense>(ExpenseService.boxName);
+  final expenseBox = Hive.box<Expense>(ExpenseService.boxName);
 
+  debugPrint('Hive box name: ${expenseBox.name}');
+  debugPrint('Hive box length: ${expenseBox.length}');
+  debugPrint('Hive box keys: ${expenseBox.keys.toList()}');
+
+  for (final expense in expenseBox.values) {
+    debugPrint(
+      'Loaded expense: '
+      '${expense.title}, ₹${expense.amount}, '
+      '${expense.category}, ${expense.date}',
+    );
+  }
   runApp(const GuruPilotApp());
 }
 
