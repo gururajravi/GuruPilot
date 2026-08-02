@@ -160,7 +160,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             DropdownButtonFormField<String>(
-              value: _months.contains(_selectedMonth) ? _selectedMonth : 'All',
+              initialValue: _months.contains(_selectedMonth)
+                  ? _selectedMonth
+                  : 'All',
               decoration: InputDecoration(
                 labelText: 'Month',
                 prefixIcon: const Icon(Icons.calendar_view_month),

@@ -8,6 +8,7 @@ import 'expenses_screen.dart';
 import 'analytics_screen.dart';
 import 'settings_screen.dart';
 import 'add_expense_screen.dart';
+import 'investments_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,8 +29,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _loadExpenses() {
+    final loadedExpenses = ExpenseService.getExpenses();
+
+    debugPrint('HomeScreen loaded ${loadedExpenses.length} expenses');
+
+    for (final expense in loadedExpenses) {
+      debugPrint(
+        'Expense: ${expense.title} | ₹${expense.amount} | ${expense.category}',
+      );
+    }
+
     setState(() {
-      expenses = ExpenseService.getExpenses();
+      expenses = loadedExpenses;
     });
   }
 
@@ -53,16 +64,19 @@ class _HomeScreenState extends State<HomeScreen> {
       DashboardScreen(expenses: expenses),
       ExpensesScreen(expenses: expenses, onExpensesChanged: _loadExpenses),
       AnalyticsScreen(expenses: expenses),
+      const InvestmentsScreen(),
       const SettingsScreen(),
     ];
 
     return Scaffold(
       body: screens[_selectedIndex],
 
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addExpense,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: (_selectedIndex == 0 || _selectedIndex == 1)
+          ? FloatingActionButton(
+              onPressed: _addExpense,
+              child: const Icon(Icons.add),
+            )
+          : null,
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -75,19 +89,23 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
-            label: "Dashboard",
+            label: 'Dashboard',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.receipt_long),
-            label: "Expenses",
+            label: 'Expenses',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart),
-            label: "Analytics",
+            label: 'Analytics',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Investments',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
-            label: "Settings",
+            label: 'Settings',
           ),
         ],
       ),

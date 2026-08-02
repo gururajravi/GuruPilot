@@ -5,6 +5,8 @@ import 'data/historical_expenses_2026.dart';
 import 'models/expense.dart';
 import 'screens/home_screen.dart';
 import 'services/expense_service.dart';
+import 'models/investment.dart';
+import 'services/investment_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,9 +16,11 @@ Future<void> main() async {
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(ExpenseAdapter());
   }
-
+  if (!Hive.isAdapterRegistered(1)) {
+    Hive.registerAdapter(InvestmentAdapter());
+  }
   await Hive.openBox<Expense>(ExpenseService.boxName);
-
+  await Hive.openBox<Investment>(InvestmentService.boxName);
   final importedCount = await ExpenseService.importExpenses(
     buildHistoricalExpenses2026(),
   );
