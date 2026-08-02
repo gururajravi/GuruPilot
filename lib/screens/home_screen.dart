@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import '../models/expense.dart';
 import '../services/expense_service.dart';
 
+import 'accounts_screen.dart';
+import 'add_expense_screen.dart';
+import 'analytics_screen.dart';
 import 'dashboard_screen.dart';
 import 'expenses_screen.dart';
-import 'analytics_screen.dart';
-import 'settings_screen.dart';
-import 'add_expense_screen.dart';
 import 'investments_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,7 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     for (final expense in loadedExpenses) {
       debugPrint(
-        'Expense: ${expense.title} | ₹${expense.amount} | ${expense.category}',
+        'Expense: ${expense.title} | '
+        '₹${expense.amount} | '
+        '${expense.category}',
       );
     }
 
@@ -45,17 +48,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _addExpense() async {
-    final result = await Navigator.push(
+    final result = await Navigator.push<Expense>(
       context,
       MaterialPageRoute(builder: (_) => const AddExpenseScreen()),
     );
 
-    if (result is Expense) {
-      await ExpenseService.addExpense(result);
+    if (result == null) return;
 
-      if (!mounted) return;
-      _loadExpenses();
-    }
+    await ExpenseService.addExpense(result);
+
+    if (!mounted) return;
+
+    _loadExpenses();
   }
 
   @override
@@ -65,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ExpensesScreen(expenses: expenses, onExpensesChanged: _loadExpenses),
       AnalyticsScreen(expenses: expenses),
       const InvestmentsScreen(),
+      const AccountsScreen(),
       const SettingsScreen(),
     ];
 
@@ -102,6 +107,10 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.account_balance_wallet),
             label: 'Investments',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance),
+            label: 'Accounts',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),

@@ -37,6 +37,12 @@ class Expense extends HiveObject {
   @HiveField(10)
   final String? notes;
 
+  @HiveField(11)
+  final int? accountKey;
+
+  @HiveField(12)
+  final String? accountName;
+
   Expense({
     required this.title,
     required this.amount,
@@ -49,6 +55,8 @@ class Expense extends HiveObject {
     this.transactionId,
     this.isCategorized = true,
     this.notes,
+    this.accountKey,
+    this.accountName,
   });
 
   Expense copyWith({
@@ -63,6 +71,8 @@ class Expense extends HiveObject {
     String? transactionId,
     bool? isCategorized,
     String? notes,
+    int? accountKey,
+    String? accountName,
   }) {
     return Expense(
       title: title ?? this.title,
@@ -76,6 +86,8 @@ class Expense extends HiveObject {
       transactionId: transactionId ?? this.transactionId,
       isCategorized: isCategorized ?? this.isCategorized,
       notes: notes ?? this.notes,
+      accountKey: accountKey ?? this.accountKey,
+      accountName: accountName ?? this.accountName,
     );
   }
 }

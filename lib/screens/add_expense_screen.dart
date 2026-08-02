@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/expense.dart';
+import '../services/merchant_rule_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Expense? expense;
@@ -25,6 +26,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   late String selectedPerson;
   late DateTime selectedDate;
 
+  bool _isSaving = false;
+  String? _appliedMerchantRule;
+
   final List<String> categories = const [
     'Food',
     'Guru Office Food',
@@ -44,6 +48,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     'Other',
     'Uncategorized',
   ];
+
   final List<String> paymentMethods = const [
     'UPI',
     'Cash',
@@ -106,6 +111,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     merchantController.dispose();
     transactionIdController.dispose();
     notesController.dispose();
+
     super.dispose();
   }
 
@@ -124,82 +130,178 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     });
   }
 
-  void _saveExpense() {
+  void _applyMerchantRule() {
+    final merchant = merchantController.text.trim();
+
+    if (merchant.isEmpty) {
+      if (_appliedMerchantRule != null) {
+        setState(() {
+          _appliedMerchantRule = null;
+        });
+      }
+
+      return;
+    }
+
+    final rule = MerchantRuleService.suggestRule(merchant);
+
+    if (rule == null) {
+      if (_appliedMerchantRule != null) {
+        setState(() {
+          _appliedMerchantRule = null;
+        });
+      }
+
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      selectedCategory = _validCategory(rule.category);
+
+      selectedPaymentMethod = _validPaymentMethod(rule.paymentMethod);
+
+      selectedPerson = _validPerson(rule.person);
+
+      _appliedMerchantRule = rule.merchantName;
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Applied saved rule for ${rule.merchantName}.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  Future<void> _saveExpense() async {
+    if (_isSaving) return;
+
     final title = titleController.text.trim();
+
     final amountText = amountController.text.trim().replaceAll(',', '');
+
     final amount = double.tryParse(amountText);
 
     if (title.isEmpty) {
       _showMessage('Please enter an expense title.');
+
       return;
     }
 
     if (amount == null || amount <= 0) {
       _showMessage('Please enter a valid amount.');
+
       return;
     }
 
     final merchant = merchantController.text.trim();
+
     final transactionId = transactionIdController.text.trim();
+
     final notes = notesController.text.trim();
 
-    final expense = Expense(
-      title: title,
-      amount: amount,
-      category: selectedCategory,
-      date: selectedDate,
-      merchant: merchant.isEmpty ? null : merchant,
-      paymentMethod: selectedPaymentMethod,
-      source: widget.expense?.source ?? 'manual',
-      person: selectedPerson,
-      transactionId: transactionId.isEmpty ? null : transactionId,
-      isCategorized: selectedCategory != 'Uncategorized',
-      notes: notes.isEmpty ? null : notes,
-    );
+    setState(() {
+      _isSaving = true;
+    });
 
-    Navigator.pop(context, expense);
+    try {
+      if (merchant.isNotEmpty) {
+        await MerchantRuleService.saveRule(
+          merchantName: merchant,
+          category: selectedCategory,
+          person: selectedPerson,
+          paymentMethod: selectedPaymentMethod,
+        );
+      }
+
+      final expense = Expense(
+        title: title,
+        amount: amount,
+        category: selectedCategory,
+        date: selectedDate,
+        merchant: merchant.isEmpty ? null : merchant,
+        paymentMethod: selectedPaymentMethod,
+        source: widget.expense?.source ?? 'manual',
+        person: selectedPerson,
+        transactionId: transactionId.isEmpty ? null : transactionId,
+        isCategorized: selectedCategory != 'Uncategorized',
+        notes: notes.isEmpty ? null : notes,
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(context, expense);
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isSaving = false;
+      });
+
+      _showMessage('Unable to save expense: $error');
+    }
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _categoryLabel(String category) {
     switch (category) {
       case 'Food':
         return '🍔 Food';
+
       case 'Fuel':
         return '⛽ Fuel';
+
       case 'Grocery':
         return '🛍️ Grocery';
+
       case 'Shopping':
         return '🛒 Shopping';
+
       case 'Bills':
         return '💡 Bills';
+
       case 'Travel':
         return '✈️ Travel';
+
       case 'Medical':
         return '💊 Medical';
+
       case 'Entertainment':
         return '🎬 Entertainment';
+
       case 'Personal':
         return '👤 Personal';
+
       case 'Uncategorized':
         return '❓ Uncategorized';
+
       case 'Guru Office Food':
         return '🍱 Guru Office Food';
+
       case 'Bike':
         return '🏍️ Bike';
+
       case 'Car':
         return '🚗 Car';
+
       case 'Miscellaneous':
         return '📦 Miscellaneous';
+
       case 'Guru Personal':
         return '👤 Guru Personal';
+
       case 'Ananya Personal':
         return '👤 Ananya Personal';
+
       default:
         return '📦 Other';
     }
@@ -209,12 +311,16 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     switch (paymentMethod) {
       case 'UPI':
         return Icons.qr_code_2;
+
       case 'Cash':
         return Icons.payments_outlined;
+
       case 'Card':
         return Icons.credit_card;
+
       case 'Bank':
         return Icons.account_balance_outlined;
+
       default:
         return Icons.help_outline;
     }
@@ -241,6 +347,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 20),
 
             TextField(
@@ -255,9 +362,78 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            Focus(
+              onFocusChange: (hasFocus) {
+                if (!hasFocus) {
+                  _applyMerchantRule();
+                }
+              },
+              child: TextField(
+                controller: merchantController,
+                textCapitalization: TextCapitalization.words,
+                onSubmitted: (_) {
+                  _applyMerchantRule();
+                },
+                decoration: InputDecoration(
+                  labelText: 'Merchant',
+                  hintText: 'Example: Swiggy, BESCOM, Shell',
+                  prefixIcon: const Icon(Icons.store_outlined),
+                  suffixIcon: merchantController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Apply merchant rule',
+                          onPressed: _applyMerchantRule,
+                          icon: const Icon(Icons.auto_awesome),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+
+            if (_appliedMerchantRule != null) ...[
+              const SizedBox(height: 10),
+
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.indigo.shade100),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      size: 20,
+                      color: Colors.indigo,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Rule applied: '
+                        '$_appliedMerchantRule → '
+                        '$selectedCategory',
+                        style: const TextStyle(
+                          color: Colors.indigo,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              key: ValueKey('category-$selectedCategory'),
               initialValue: selectedCategory,
               decoration: const InputDecoration(
                 labelText: 'Category',
@@ -278,9 +454,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 });
               },
             ),
+
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              key: ValueKey('payment-$selectedPaymentMethod'),
               initialValue: selectedPaymentMethod,
               decoration: InputDecoration(
                 labelText: 'Payment Method',
@@ -301,9 +479,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 });
               },
             ),
+
             const SizedBox(height: 20),
 
             DropdownButtonFormField<String>(
+              key: ValueKey('person-$selectedPerson'),
               initialValue: selectedPerson,
               decoration: const InputDecoration(
                 labelText: 'Expense For',
@@ -324,18 +504,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 });
               },
             ),
-            const SizedBox(height: 20),
 
-            TextField(
-              controller: merchantController,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Merchant',
-                hintText: 'Example: Swiggy, BESCOM, Shell',
-                prefixIcon: Icon(Icons.store_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
             const SizedBox(height: 20),
 
             TextField(
@@ -347,6 +516,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 20),
 
             ListTile(
@@ -364,6 +534,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               trailing: const Icon(Icons.edit_calendar),
               onTap: _selectDate,
             ),
+
             const SizedBox(height: 20),
 
             TextField(
@@ -379,15 +550,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 alignLabelWithHint: true,
               ),
             ),
+
             const SizedBox(height: 30),
 
             SizedBox(
               height: 50,
               child: ElevatedButton.icon(
-                onPressed: _saveExpense,
-                icon: Icon(widget.isEditing ? Icons.save : Icons.add),
+                onPressed: _isSaving ? null : _saveExpense,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(widget.isEditing ? Icons.save : Icons.add),
                 label: Text(
-                  widget.isEditing ? 'Update Expense' : 'Save Expense',
+                  _isSaving
+                      ? 'Saving...'
+                      : widget.isEditing
+                      ? 'Update Expense'
+                      : 'Save Expense',
                 ),
               ),
             ),
