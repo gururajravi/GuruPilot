@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'import_history_screen.dart';
 import 'import_transactions_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  Future<void> _openPhonePeImport(BuildContext context) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ImportTransactionsScreen()),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,43 +24,66 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.indigo.shade100,
-                child: const Icon(
-                  Icons.upload_file_outlined,
-                  color: Colors.indigo,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.upload_file_outlined),
+                  ),
+                  title: const Text('Import PhonePe Statement'),
+                  subtitle: const Text(
+                    'Import and review PhonePe '
+                    'Excel transactions.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ImportTransactionsScreen(),
+                      ),
+                    );
+                  },
                 ),
-              ),
-              title: const Text(
-                'Import PhonePe Statement',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Choose a PhonePe Excel statement and preview transactions.',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                _openPhonePeImport(context);
-              },
+                const Divider(height: 1),
+                ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.history)),
+                  title: const Text('Import History'),
+                  subtitle: const Text('View completed import sessions.'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ImportHistoryScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
           const Text(
-            'About',
+            'Privacy',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          const Card(
+          Card(
             child: ListTile(
-              leading: CircleAvatar(
-                child: Icon(Icons.account_balance_wallet_outlined),
+              leading: const CircleAvatar(child: Icon(Icons.lock_outline)),
+              title: const Text('Local Data Storage'),
+              subtitle: const Text(
+                'Financial data is stored locally '
+                'using Hive.',
               ),
-              title: Text(
-                'GuruPilot',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text('Personal finance and expense tracking app'),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: Text(
+              'GuruPilot v0.8',
+              style: TextStyle(color: Colors.grey.shade600),
             ),
           ),
         ],
