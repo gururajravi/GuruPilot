@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'import_history_screen.dart';
 import 'import_transactions_screen.dart';
+import 'merchant_intelligence_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -41,6 +42,26 @@ class SettingsScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => const ImportTransactionsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.storefront_outlined),
+                  ),
+                  title: const Text('Merchant Intelligence'),
+                  subtitle: const Text(
+                    'View learned merchant rules and spending.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MerchantIntelligenceScreen(),
                       ),
                     );
                   },
