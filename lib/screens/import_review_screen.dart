@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/import_review_item.dart';
+import 'import_review/widgets/summary_card.dart';
 
 enum ImportReviewFilter { needsReview, ready, imported, income, transfers, all }
 
@@ -139,6 +140,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               item.transactionType == ImportTransactionType.expense &&
               item.category == 'Uncategorized';
         });
+        break;
 
       case ImportReviewFilter.ready:
         items = reviewItems.where((item) {
@@ -146,24 +148,29 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               item.transactionType == ImportTransactionType.expense &&
               item.category != 'Uncategorized';
         });
+        break;
 
       case ImportReviewFilter.imported:
         items = reviewItems.where((item) {
           return item.isDuplicate;
         });
+        break;
 
       case ImportReviewFilter.income:
         items = reviewItems.where((item) {
           return item.transactionType == ImportTransactionType.income;
         });
+        break;
 
       case ImportReviewFilter.transfers:
         items = reviewItems.where((item) {
           return item.transactionType == ImportTransactionType.transfer;
         });
+        break;
 
       case ImportReviewFilter.all:
         items = reviewItems;
+        break;
     }
 
     final normalizedQuery = searchQuery.trim().toLowerCase();
@@ -394,15 +401,19 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
               switch (value) {
                 case 'select_all':
                   _selectAllExpenses();
+                  break;
 
                 case 'select_categorized':
                   _selectCategorizedOnly();
+                  break;
 
                 case 'select_visible_ready':
                   _selectVisibleReadyItems();
+                  break;
 
                 case 'clear':
                   _clearSelection();
+                  break;
               }
             },
             itemBuilder: (_) => const [
@@ -450,7 +461,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       ),
       body: Column(
         children: [
-          _SmartReviewSummary(
+          ImportReviewSummaryCard(
             totalCount: reviewItems.length,
             selectedCount: _selectedCount,
             needsReviewCount: _needsReviewCount,
@@ -529,124 +540,6 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
                       );
                     },
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SmartReviewSummary extends StatelessWidget {
-  final int totalCount;
-  final int selectedCount;
-  final int needsReviewCount;
-  final int readyCount;
-  final int importedCount;
-  final int incomeCount;
-  final int transferCount;
-  final double progress;
-
-  const _SmartReviewSummary({
-    required this.totalCount,
-    required this.selectedCount,
-    required this.needsReviewCount,
-    required this.readyCount,
-    required this.importedCount,
-    required this.incomeCount,
-    required this.transferCount,
-    required this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final percentage = (progress * 100).round();
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.indigo,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Review Progress',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Text(
-                '$percentage%',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 19,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: progress.clamp(0, 1),
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(10),
-            backgroundColor: Colors.white24,
-            color: Colors.white,
-          ),
-          const SizedBox(height: 18),
-          Wrap(
-            spacing: 20,
-            runSpacing: 14,
-            children: [
-              _SummaryMetric(label: 'Total', value: totalCount),
-              _SummaryMetric(label: 'Selected', value: selectedCount),
-              _SummaryMetric(label: 'Need Review', value: needsReviewCount),
-              _SummaryMetric(label: 'Ready', value: readyCount),
-              _SummaryMetric(label: 'Imported', value: importedCount),
-              _SummaryMetric(label: 'Income', value: incomeCount),
-              _SummaryMetric(label: 'Transfers', value: transferCount),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryMetric extends StatelessWidget {
-  final String label;
-  final int value;
-
-  const _SummaryMetric({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 92,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value.toString(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-            ),
           ),
         ],
       ),
