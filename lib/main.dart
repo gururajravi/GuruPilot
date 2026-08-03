@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'data/historical_expenses_2026.dart';
+
 import 'models/account.dart';
 import 'models/expense.dart';
+import 'models/import_history.dart';
 import 'models/investment.dart';
 import 'models/merchant_rule.dart';
 import 'models/pending_transaction.dart';
@@ -13,6 +15,7 @@ import 'screens/home_screen.dart';
 
 import 'services/account_service.dart';
 import 'services/expense_service.dart';
+import 'services/import_history_service.dart';
 import 'services/investment_service.dart';
 import 'services/merchant_rule_service.dart';
 import 'services/pending_transaction_service.dart';
@@ -23,39 +26,41 @@ Future<void> main() async {
 
   await Hive.initFlutter();
 
-  // Expense
+  //--------------------------------------------------------
+  // Register Hive Adapters
+  //--------------------------------------------------------
+
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(ExpenseAdapter());
   }
 
-  // Investment
   if (!Hive.isAdapterRegistered(1)) {
     Hive.registerAdapter(InvestmentAdapter());
   }
 
-  // Merchant Rules
   if (!Hive.isAdapterRegistered(2)) {
     Hive.registerAdapter(MerchantRuleAdapter());
   }
 
-  // Pending Transactions
   if (!Hive.isAdapterRegistered(3)) {
     Hive.registerAdapter(PendingTransactionAdapter());
   }
 
-  // Accounts
   if (!Hive.isAdapterRegistered(4)) {
     Hive.registerAdapter(AccountAdapter());
   }
 
-  // Reviewed Transactions
   if (!Hive.isAdapterRegistered(5)) {
     Hive.registerAdapter(ReviewedTransactionAdapter());
   }
 
-  //--------------------------------------------------
+  if (!Hive.isAdapterRegistered(6)) {
+    Hive.registerAdapter(ImportHistoryAdapter());
+  }
+
+  //--------------------------------------------------------
   // Open Hive Boxes
-  //--------------------------------------------------
+  //--------------------------------------------------------
 
   await Hive.openBox<Expense>(ExpenseService.boxName);
 
@@ -69,35 +74,50 @@ Future<void> main() async {
 
   await Hive.openBox<ReviewedTransaction>(ReviewedTransactionService.boxName);
 
-  //--------------------------------------------------
-  // Load Sample Historical Data
-  //--------------------------------------------------
+  await Hive.openBox<ImportHistory>(ImportHistoryService.boxName);
 
-  final importedCount = await ExpenseService.importExpenses(
-    buildHistoricalExpenses2026(),
-  );
+  //--------------------------------------------------------
+  // Load Sample Data (only if expense box is empty)
+  //--------------------------------------------------------
 
   final expenseBox = Hive.box<Expense>(ExpenseService.boxName);
 
-  debugPrint('Historical expenses imported: $importedCount');
+  if (expenseBox.isEmpty) {
+    final importedCount = await ExpenseService.importExpenses(
+      buildHistoricalExpenses2026(),
+    );
 
-  debugPrint('Hive expense box name: ${expenseBox.name}');
-
-  debugPrint('Hive expense box length: ${expenseBox.length}');
-
-  debugPrint('Hive expense box keys: ${expenseBox.keys.toList()}');
-
-  for (final expense in expenseBox.values) {
     debugPrint(
-      'Loaded expense: '
-      '${expense.title}, '
-      '₹${expense.amount}, '
-      '${expense.category}, '
-      '${expense.date}, '
-      '${expense.source}, '
-      '${expense.transactionId}',
+      'Historical expenses imported: '
+      '$importedCount',
     );
   }
+
+  //--------------------------------------------------------
+  // Debug Logs
+  //--------------------------------------------------------
+
+  debugPrint('Expense count : ${expenseBox.length}');
+
+  debugPrint(
+    'Merchant rules : '
+    '${Hive.box<MerchantRule>(MerchantRuleService.boxName).length}',
+  );
+
+  debugPrint(
+    'Accounts : '
+    '${Hive.box<Account>(AccountService.boxName).length}',
+  );
+
+  debugPrint(
+    'Reviewed Transactions : '
+    '${Hive.box<ReviewedTransaction>(ReviewedTransactionService.boxName).length}',
+  );
+
+  debugPrint(
+    'Import History : '
+    '${Hive.box<ImportHistory>(ImportHistoryService.boxName).length}',
+  );
 
   runApp(const GuruPilotApp());
 }
@@ -108,11 +128,11 @@ class GuruPilotApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'GuruPilot',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
       home: const HomeScreen(),
     );
