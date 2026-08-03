@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/import_review_item.dart';
 import 'import_review/widgets/summary_card.dart';
+import 'import_review/widgets/search_bar.dart';
 
 enum ImportReviewFilter { needsReview, ready, imported, income, transfers, all }
 
@@ -115,6 +116,26 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
     return reviewItems.where((item) {
       return item.transactionType == ImportTransactionType.income;
     }).length;
+  }
+
+  bool get _hasReviewDecisions {
+    return reviewItems.any((item) {
+      if (item.isDuplicate) {
+        return false;
+      }
+
+      final isReviewedNonExpense =
+          item.transactionType == ImportTransactionType.transfer ||
+          item.transactionType == ImportTransactionType.income ||
+          item.transactionType == ImportTransactionType.refund;
+
+      final isReadyExpense =
+          item.transactionType == ImportTransactionType.expense &&
+          item.shouldImport &&
+          item.category != 'Uncategorized';
+
+      return isReviewedNonExpense || isReadyExpense;
+    });
   }
 
   double get _reviewProgress {
@@ -275,20 +296,11 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   }
 
   void _continueImport() {
-    final selectedItems = reviewItems.where((item) {
+    final uncategorizedSelected = reviewItems.where((item) {
       return item.shouldImport &&
           !item.isDuplicate &&
-          item.transactionType == ImportTransactionType.expense;
-    }).toList();
-
-    if (selectedItems.isEmpty) {
-      _showMessage('Select at least one expense to import.');
-
-      return;
-    }
-
-    final uncategorizedSelected = selectedItems.where((item) {
-      return item.category == 'Uncategorized';
+          item.transactionType == ImportTransactionType.expense &&
+          item.category == 'Uncategorized';
     }).length;
 
     if (uncategorizedSelected > 0) {
@@ -301,7 +313,30 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       return;
     }
 
-    Navigator.pop(context, selectedItems);
+    final reviewedItems = reviewItems.where((item) {
+      if (item.isDuplicate) {
+        return false;
+      }
+
+      final isReviewedNonExpense =
+          item.transactionType == ImportTransactionType.transfer ||
+          item.transactionType == ImportTransactionType.income ||
+          item.transactionType == ImportTransactionType.refund;
+
+      final isReadyExpense =
+          item.transactionType == ImportTransactionType.expense &&
+          item.shouldImport &&
+          item.category != 'Uncategorized';
+
+      return isReviewedNonExpense || isReadyExpense;
+    }).toList();
+
+    if (reviewedItems.isEmpty) {
+      _showMessage('No reviewed transactions are available to save.');
+      return;
+    }
+
+    Navigator.pop(context, reviewedItems);
   }
 
   void _showMessage(String message) {
@@ -444,16 +479,17 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
           child: SizedBox(
             height: 52,
             child: FilledButton.icon(
-              onPressed: _selectedCount == 0 || _uncategorizedSelectedCount > 0
-                  ? null
-                  : _continueImport,
-              icon: const Icon(Icons.arrow_forward),
+              onPressed: _hasReviewDecisions && _uncategorizedSelectedCount == 0
+                  ? _continueImport
+                  : null,
+              icon: const Icon(Icons.save_outlined),
               label: Text(
                 _uncategorizedSelectedCount > 0
-                    ? '$_uncategorizedSelectedCount selected '
-                          'need categories'
-                    : 'Continue with $_selectedCount '
-                          'expense${_selectedCount == 1 ? '' : 's'}',
+                    ? '$_uncategorizedSelectedCount selected need categories'
+                    : _selectedCount > 0
+                    ? 'Save and continue with $_selectedCount '
+                          'expense${_selectedCount == 1 ? '' : 's'}'
+                    : 'Save reviewed transactions',
               ),
             ),
           ),
@@ -472,7 +508,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
             progress: _reviewProgress,
           ),
 
-          _SearchBox(
+          ImportReviewSearchBar(
             controller: _searchController,
             onChanged: (value) {
               setState(() {
@@ -542,43 +578,6 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
                   ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SearchBox extends StatelessWidget {
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  const _SearchBox({
-    required this.controller,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        decoration: InputDecoration(
-          hintText: 'Search merchant, transaction ID or account',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: controller.text.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Clear search',
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close),
-                ),
-          border: const OutlineInputBorder(),
-          filled: true,
-          fillColor: Colors.white,
-        ),
       ),
     );
   }

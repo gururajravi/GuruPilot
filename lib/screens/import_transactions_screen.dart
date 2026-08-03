@@ -4,6 +4,7 @@ import '../models/import_review_item.dart';
 import '../models/import_transaction.dart';
 import '../services/import_service.dart';
 import 'import_review_screen.dart';
+import 'smart_sync_screen.dart';
 
 class ImportTransactionsScreen extends StatefulWidget {
   const ImportTransactionsScreen({super.key});
@@ -73,13 +74,21 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text(
-              'No transactions are available '
-              'for review.',
-            ),
+            content: Text('No transactions are available for review.'),
           ),
         );
 
+      return;
+    }
+
+    final shouldStartReview = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SmartSyncScreen(reviewItems: reviewItems),
+      ),
+    );
+
+    if (!mounted || shouldStartReview != true) {
       return;
     }
 
