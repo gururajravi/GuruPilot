@@ -4,10 +4,12 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../models/expense.dart';
+import '../models/import_history.dart';
 import '../models/import_review_item.dart';
 import '../models/import_transaction.dart';
 import '../models/reviewed_transaction.dart';
 import 'expense_service.dart';
+import 'import_history_service.dart';
 import 'merchant_rule_service.dart';
 import 'reviewed_transaction_service.dart';
 
@@ -18,21 +20,33 @@ class ImportService {
     importedTransactions.clear();
   }
 
-  static int get totalTransactions => importedTransactions.length;
+  static int get totalTransactions {
+    return importedTransactions.length;
+  }
 
-  static int get debitCount =>
-      importedTransactions.where((transaction) => transaction.isDebit).length;
+  static int get debitCount {
+    return importedTransactions
+        .where((transaction) => transaction.isDebit)
+        .length;
+  }
 
-  static int get creditCount =>
-      importedTransactions.where((transaction) => transaction.isCredit).length;
+  static int get creditCount {
+    return importedTransactions
+        .where((transaction) => transaction.isCredit)
+        .length;
+  }
 
-  static double get totalDebits => importedTransactions
-      .where((transaction) => transaction.isDebit)
-      .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  static double get totalDebits {
+    return importedTransactions
+        .where((transaction) => transaction.isDebit)
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
 
-  static double get totalCredits => importedTransactions
-      .where((transaction) => transaction.isCredit)
-      .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  static double get totalCredits {
+    return importedTransactions
+        .where((transaction) => transaction.isCredit)
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
 
   static Future<List<ImportTransaction>?> pickAndParsePhonePeExcel() async {
     final result = await FilePicker.pickFiles(
@@ -46,7 +60,8 @@ class ImportService {
       return null;
     }
 
-    final bytes = result.files.single.bytes;
+    final file = result.files.single;
+    final bytes = file.bytes;
 
     if (bytes == null || bytes.isEmpty) {
       throw Exception('Unable to read the selected Excel file.');
@@ -77,7 +92,8 @@ class ImportService {
       final detailsText = _cellText(row, 1);
       final typeText = _cellText(row, 2);
       final amount = _cellNumber(row, 3);
-      final normalizedType = typeText.toLowerCase();
+
+      final normalizedType = typeText.trim().toLowerCase();
 
       final isTransactionRow =
           dateText.isNotEmpty &&
@@ -92,16 +108,23 @@ class ImportService {
       final nextRow = rowIndex + 1 < sheet.rows.length
           ? sheet.rows[rowIndex + 1]
           : null;
+
       final accountRow = rowIndex + 2 < sheet.rows.length
           ? sheet.rows[rowIndex + 2]
           : null;
 
       final utrText = nextRow == null ? '' : _cellText(nextRow, 1);
+
       final accountText = accountRow == null ? '' : _cellText(accountRow, 1);
+
       final parsedDate = _parsePhonePeDate(dateText);
+
       final transactionId = _extractTransactionId(detailsText);
+
       final merchant = _extractMerchant(detailsText);
+
       final utr = _extractUtr(utrText);
+
       final account = _extractAccount(accountText);
 
       if (parsedDate == null || transactionId.isEmpty) {
@@ -151,6 +174,12 @@ class ImportService {
     for (final transaction in importedTransactions) {
       final transactionId = transaction.transactionId.trim();
 
+      if (transactionId.isEmpty) {
+        continue;
+      }
+
+      // Non-expense decisions already saved locally
+      // should never be shown again.
       if (reviewedTransactionIds.contains(transactionId)) {
         continue;
       }
@@ -170,6 +199,7 @@ class ImportService {
             rememberMerchant: false,
           ),
         );
+
         continue;
       }
 
@@ -190,22 +220,7 @@ class ImportService {
             rememberMerchant: true,
           ),
         );
-        continue;
-      }
 
-      if (_looksLikePersonTransfer(transaction)) {
-        reviewItems.add(
-          ImportReviewItem(
-            transaction: transaction,
-            transactionType: ImportTransactionType.transfer,
-            category: 'Uncategorized',
-            person: 'Shared',
-            paymentMethod: 'UPI',
-            shouldImport: false,
-            isDuplicate: isDuplicate,
-            rememberMerchant: false,
-          ),
-        );
         continue;
       }
 
@@ -222,6 +237,24 @@ class ImportService {
             rememberMerchant: false,
           ),
         );
+
+        continue;
+      }
+
+      if (_looksLikePersonTransfer(transaction)) {
+        reviewItems.add(
+          ImportReviewItem(
+            transaction: transaction,
+            transactionType: ImportTransactionType.transfer,
+            category: 'Uncategorized',
+            person: 'Shared',
+            paymentMethod: 'UPI',
+            shouldImport: false,
+            isDuplicate: isDuplicate,
+            rememberMerchant: false,
+          ),
+        );
+
         continue;
       }
 
@@ -245,10 +278,13 @@ class ImportService {
   static Future<ImportResult> importReviewedExpenses(
     Iterable<ImportReviewItem> reviewItems,
   ) async {
+    final items = reviewItems.toList();
+
     var importedCount = 0;
     var skippedCount = 0;
     var rulesSavedCount = 0;
     var reviewedCount = 0;
+    var importedAmount = 0.0;
 
     final existingTransactionIds = ExpenseService.getExpenses()
         .map((expense) => expense.transactionId)
@@ -257,8 +293,9 @@ class ImportService {
         .where((transactionId) => transactionId.isNotEmpty)
         .toSet();
 
-    for (final item in reviewItems) {
+    for (final item in items) {
       final transaction = item.transaction;
+
       final transactionId = transaction.transactionId.trim();
 
       if (transactionId.isEmpty) {
@@ -266,12 +303,12 @@ class ImportService {
         continue;
       }
 
-      final isReviewedNonExpense =
-          item.transactionType == ImportTransactionType.transfer ||
-          item.transactionType == ImportTransactionType.income ||
-          item.transactionType == ImportTransactionType.refund;
+      if (item.isDuplicate) {
+        skippedCount++;
+        continue;
+      }
 
-      if (isReviewedNonExpense) {
+      if (_isReviewedNonExpense(item.transactionType)) {
         await ReviewedTransactionService.save(
           ReviewedTransaction(
             transactionId: transactionId,
@@ -281,7 +318,7 @@ class ImportService {
             transactionDate: transaction.date,
             reviewedAt: DateTime.now(),
             source: 'phonepe_import',
-            notes: transaction.description,
+            notes: _buildReviewedNotes(transaction, item.transactionType),
           ),
         );
 
@@ -289,13 +326,12 @@ class ImportService {
         continue;
       }
 
-      final canImport =
+      final canImportExpense =
           item.shouldImport &&
-          !item.isDuplicate &&
           item.transactionType == ImportTransactionType.expense &&
           item.category != 'Uncategorized';
 
-      if (!canImport) {
+      if (!canImportExpense) {
         skippedCount++;
         continue;
       }
@@ -314,7 +350,7 @@ class ImportService {
         paymentMethod: item.paymentMethod,
         source: 'phonepe_import',
         person: item.person,
-        transactionId: transaction.transactionId,
+        transactionId: transactionId,
         isCategorized: true,
         notes: _buildImportNotes(transaction),
         accountName: transaction.account,
@@ -323,7 +359,9 @@ class ImportService {
       await ExpenseService.addExpense(expense);
 
       existingTransactionIds.add(transactionId);
+
       importedCount++;
+      importedAmount += transaction.amount;
 
       if (item.rememberMerchant && transaction.merchant.trim().isNotEmpty) {
         await MerchantRuleService.saveRule(
@@ -337,12 +375,44 @@ class ImportService {
       }
     }
 
+    final completedAt = DateTime.now();
+
+    final history = ImportHistory(
+      id: 'phonepe-${completedAt.microsecondsSinceEpoch}',
+      source: 'PhonePe',
+      importedAt: completedAt,
+      totalTransactions: importedTransactions.length,
+      importedExpenses: importedCount,
+      reviewedTransactions: reviewedCount,
+      skippedTransactions: skippedCount,
+      merchantRulesSaved: rulesSavedCount,
+      importedAmount: importedAmount,
+      fileName: null,
+      notes: _buildHistoryNotes(
+        importedCount: importedCount,
+        reviewedCount: reviewedCount,
+        skippedCount: skippedCount,
+        rulesSavedCount: rulesSavedCount,
+        importedAmount: importedAmount,
+      ),
+    );
+
+    await ImportHistoryService.save(history);
+
     return ImportResult(
       importedCount: importedCount,
       skippedCount: skippedCount,
       rulesSavedCount: rulesSavedCount,
       reviewedCount: reviewedCount,
+      importedAmount: importedAmount,
+      historyId: history.id,
     );
+  }
+
+  static bool _isReviewedNonExpense(ImportTransactionType type) {
+    return type == ImportTransactionType.transfer ||
+        type == ImportTransactionType.income ||
+        type == ImportTransactionType.refund;
   }
 
   static String _buildImportNotes(ImportTransaction transaction) {
@@ -359,8 +429,44 @@ class ImportService {
     return parts.join(' • ');
   }
 
+  static String _buildReviewedNotes(
+    ImportTransaction transaction,
+    ImportTransactionType type,
+  ) {
+    final parts = <String>['Reviewed as ${type.name}', 'Imported from PhonePe'];
+
+    if (transaction.utr != null && transaction.utr!.trim().isNotEmpty) {
+      parts.add('UTR: ${transaction.utr}');
+    }
+
+    if (transaction.account != null && transaction.account!.trim().isNotEmpty) {
+      parts.add('Account: ${transaction.account}');
+    }
+
+    return parts.join(' • ');
+  }
+
+  static String _buildHistoryNotes({
+    required int importedCount,
+    required int reviewedCount,
+    required int skippedCount,
+    required int rulesSavedCount,
+    required double importedAmount,
+  }) {
+    return 'Imported $importedCount expense'
+        '${importedCount == 1 ? '' : 's'} '
+        'worth ₹${importedAmount.toStringAsFixed(2)}, '
+        'saved $reviewedCount reviewed transaction'
+        '${reviewedCount == 1 ? '' : 's'}, '
+        'skipped $skippedCount transaction'
+        '${skippedCount == 1 ? '' : 's'}, '
+        'and saved $rulesSavedCount merchant rule'
+        '${rulesSavedCount == 1 ? '' : 's'}.';
+  }
+
   static bool _looksLikePersonTransfer(ImportTransaction transaction) {
     final merchant = transaction.merchant.trim().toLowerCase();
+
     final description = transaction.description.toLowerCase();
 
     final containsMaskedNumber = RegExp(
@@ -412,18 +518,25 @@ class ImportService {
     switch (value) {
       case TextCellValue():
         return value.value.toString().trim();
+
       case IntCellValue():
         return value.value.toString();
+
       case DoubleCellValue():
         return value.value.toString();
+
       case DateCellValue():
         return value.asDateTimeLocal().toString();
+
       case DateTimeCellValue():
         return value.asDateTimeLocal().toString();
+
       case TimeCellValue():
         return value.asDuration().toString();
+
       case BoolCellValue():
         return value.value.toString();
+
       case FormulaCellValue():
         return value.formula.trim();
     }
@@ -443,12 +556,16 @@ class ImportService {
     switch (value) {
       case DoubleCellValue():
         return value.value;
+
       case IntCellValue():
         return value.value.toDouble();
+
       case TextCellValue():
         return _parseAmount(value.value.toString());
+
       case FormulaCellValue():
         return _parseAmount(value.formula);
+
       default:
         return _parseAmount(value.toString());
     }
@@ -497,16 +614,22 @@ class ImportService {
         'dec': 12,
       };
 
-      final month = months[phonePeMatch.group(1)!.toLowerCase()];
+      final monthName = phonePeMatch.group(1)!.toLowerCase();
+
+      final month = months[monthName];
 
       if (month == null) {
         return null;
       }
 
       final day = int.parse(phonePeMatch.group(2)!);
+
       final year = int.parse(phonePeMatch.group(3)!);
+
       var hour = int.parse(phonePeMatch.group(4)!);
+
       final minute = int.parse(phonePeMatch.group(5)!);
+
       final period = phonePeMatch.group(6)!.toUpperCase();
 
       if (period == 'PM' && hour != 12) {
@@ -535,7 +658,8 @@ class ImportService {
     return firstLine
         .replaceFirst(
           RegExp(
-            r'^(Paid to|Received from|Refund from|Payment to)\s+',
+            r'^(Paid to|Received from|'
+            r'Refund from|Payment to)\s+',
             caseSensitive: false,
           ),
           '',
@@ -545,7 +669,8 @@ class ImportService {
 
   static String _extractTransactionId(String details) {
     final match = RegExp(
-      r'Transaction\s*ID\s*:\s*([A-Za-z0-9_-]+)',
+      r'Transaction\s*ID\s*:\s*'
+      r'([A-Za-z0-9_-]+)',
       caseSensitive: false,
     ).firstMatch(details);
 
@@ -554,7 +679,8 @@ class ImportService {
 
   static String _extractUtr(String value) {
     final match = RegExp(
-      r'UTR\s*(?:No)?\s*:\s*([A-Za-z0-9_-]+)',
+      r'UTR\s*(?:No)?\s*:\s*'
+      r'([A-Za-z0-9_-]+)',
       caseSensitive: false,
     ).firstMatch(value);
 
@@ -576,11 +702,15 @@ class ImportResult {
   final int skippedCount;
   final int rulesSavedCount;
   final int reviewedCount;
+  final double importedAmount;
+  final String historyId;
 
   const ImportResult({
     required this.importedCount,
     required this.skippedCount,
     required this.rulesSavedCount,
-    this.reviewedCount = 0,
+    required this.reviewedCount,
+    required this.importedAmount,
+    required this.historyId,
   });
 }
