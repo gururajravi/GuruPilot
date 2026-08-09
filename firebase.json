@@ -1,16 +1,1 @@
-{
-  "hosting": {
-    "public": "build/web",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  }
-}
+{"hosting":{"public":"build/web","ignore":["firebase.json","**/.*","**/node_modules/**"],"rewrites":[{"source":"**","destination":"/index.html"}]},"flutter":{"platforms":{"ios":{"default":{"projectId":"gurupilot-web","appId":"1:606212153384:ios:8bb5548b2486ac275c951d","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"gurupilot-web","configurations":{"ios":"1:606212153384:ios:8bb5548b2486ac275c951d","web":"1:606212153384:web:1a27f6b9f9d8b2355c951d"}}}}}}
