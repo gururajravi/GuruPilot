@@ -97,15 +97,64 @@ class ImportService {
       throw Exception('The Excel sheet is empty.');
     }
 
-    final transactions = <ImportTransaction>[];
+    // PhonePe exports may contain blank spacer columns, so detect the
+    // actual column positions from the header row instead of assuming
+    // Date=0, Details=1, Type=2, Amount=3.
+    int? dateColumn;
+    int? detailsColumn;
+    int? typeColumn;
+    int? amountColumn;
+    int? headerRowIndex;
 
     for (var rowIndex = 0; rowIndex < sheet.rows.length; rowIndex++) {
       final row = sheet.rows[rowIndex];
 
-      final dateText = _cellText(row, 0);
-      final detailsText = _cellText(row, 1);
-      final typeText = _cellText(row, 2);
-      final amount = _cellNumber(row, 3);
+      for (var columnIndex = 0; columnIndex < row.length; columnIndex++) {
+        final text = _cellText(row, columnIndex).trim().toLowerCase();
+
+        if (text == 'date') {
+          dateColumn ??= columnIndex;
+          headerRowIndex ??= rowIndex;
+        } else if (text == 'transaction details') {
+          detailsColumn ??= columnIndex;
+          headerRowIndex ??= rowIndex;
+        } else if (text == 'type') {
+          typeColumn ??= columnIndex;
+          headerRowIndex ??= rowIndex;
+        } else if (text == 'amount') {
+          amountColumn ??= columnIndex;
+          headerRowIndex ??= rowIndex;
+        }
+      }
+
+      if (dateColumn != null &&
+          detailsColumn != null &&
+          typeColumn != null &&
+          amountColumn != null) {
+        break;
+      }
+    }
+
+    if (dateColumn == null ||
+        detailsColumn == null ||
+        typeColumn == null ||
+        amountColumn == null) {
+      throw Exception(
+        'Unable to detect PhonePe columns. Expected Date, '
+        'Transaction Details, Type and Amount.',
+      );
+    }
+
+    final transactions = <ImportTransaction>[];
+    final startRow = (headerRowIndex ?? 0) + 1;
+
+    for (var rowIndex = startRow; rowIndex < sheet.rows.length; rowIndex++) {
+      final row = sheet.rows[rowIndex];
+
+      final dateText = _cellText(row, dateColumn);
+      final detailsText = _cellText(row, detailsColumn);
+      final typeText = _cellText(row, typeColumn);
+      final amount = _cellNumber(row, amountColumn);
 
       final normalizedType = typeText.trim().toLowerCase();
 
@@ -127,18 +176,16 @@ class ImportService {
           ? sheet.rows[rowIndex + 2]
           : null;
 
-      final utrText = nextRow == null ? '' : _cellText(nextRow, 1);
+      final utrText = nextRow == null ? '' : _cellText(nextRow, detailsColumn);
 
-      final accountText = accountRow == null ? '' : _cellText(accountRow, 1);
+      final accountText = accountRow == null
+          ? ''
+          : _cellText(accountRow, detailsColumn);
 
       final parsedDate = _parsePhonePeDate(dateText);
-
       final transactionId = _extractTransactionId(detailsText);
-
       final merchant = _extractMerchant(detailsText);
-
       final utr = _extractUtr(utrText);
-
       final account = _extractAccount(accountText);
 
       if (parsedDate == null || transactionId.isEmpty) {
@@ -160,7 +207,6 @@ class ImportService {
       );
     }
 
-    // Remove duplicates inside the Excel itself.
     final uniqueTransactions = <String, ImportTransaction>{};
 
     for (final transaction in transactions) {
@@ -275,13 +321,7 @@ class ImportService {
       }
 
       // ----------------------------------------------------------
-      // AI Suggestion
-      // ----------------------------------------------------------
-
-      final aiSuggestion = AiLearningService.suggest(transaction.merchant);
-
-      // ----------------------------------------------------------
-      // Existing exact/saved merchant rule
+      // 1. Saved Merchant Rule - highest priority
       // ----------------------------------------------------------
 
       final merchantRule = MerchantRuleService.suggestRule(
@@ -299,7 +339,7 @@ class ImportService {
             shouldImport: !isDuplicate,
             isDuplicate: isDuplicate,
             rememberMerchant: true,
-            aiSuggestion: aiSuggestion,
+            aiSuggestion: null,
           ),
         );
 
@@ -307,8 +347,45 @@ class ImportService {
       }
 
       // ----------------------------------------------------------
-      // AI suggestion without direct MerchantRule
+      // 2. Historical PhonePe / merchant match
       // ----------------------------------------------------------
+
+      final historicalMatch = _findHistoricalMerchantMatch(
+        transaction.merchant,
+      );
+
+      if (historicalMatch != null) {
+        final historicalPaymentMethod =
+            historicalMatch.paymentMethod.trim().isEmpty
+            ? 'UPI'
+            : historicalMatch.paymentMethod;
+
+        final historicalPerson = historicalMatch.person.trim().isEmpty
+            ? 'Shared'
+            : historicalMatch.person;
+
+        reviewItems.add(
+          ImportReviewItem(
+            transaction: transaction,
+            transactionType: ImportTransactionType.expense,
+            category: historicalMatch.category,
+            person: historicalPerson,
+            paymentMethod: historicalPaymentMethod,
+            shouldImport: !isDuplicate,
+            isDuplicate: isDuplicate,
+            rememberMerchant: true,
+            aiSuggestion: null,
+          ),
+        );
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // 3. Built-in AI / keyword intelligence
+      // ----------------------------------------------------------
+
+      final aiSuggestion = AiLearningService.suggest(transaction.merchant);
 
       if (aiSuggestion != null) {
         reviewItems.add(
@@ -510,6 +587,160 @@ class ImportService {
       importedAmount: importedAmount,
       historyId: history.id,
     );
+  }
+
+  // ------------------------------------------------------------
+  // Historical Merchant Learning
+  // ------------------------------------------------------------
+
+  static Expense? _findHistoricalMerchantMatch(String merchantName) {
+    final target = _normalizeMerchantName(merchantName);
+
+    if (target.isEmpty) {
+      return null;
+    }
+
+    final expenses = ExpenseService.getExpenses().where((expense) {
+      final category = expense.category.trim();
+
+      return expense.isCategorized &&
+          category.isNotEmpty &&
+          category.toLowerCase() != 'uncategorized';
+    }).toList();
+
+    if (expenses.isEmpty) {
+      return null;
+    }
+
+    // First preference: exact normalized merchant match.
+    final exactMatches = expenses.where((expense) {
+      final candidate = _expenseMerchantName(expense);
+      return _normalizeMerchantName(candidate) == target;
+    }).toList();
+
+    if (exactMatches.isNotEmpty) {
+      return _mostReliableHistoricalExpense(exactMatches);
+    }
+
+    // Second preference: strong merchant-name similarity.
+    // This catches examples such as "ZOMATO" vs "ZOMATO LIMITED" while
+    // avoiding weak matches between unrelated merchants.
+    final similarMatches = expenses.where((expense) {
+      final candidate = _normalizeMerchantName(_expenseMerchantName(expense));
+
+      if (candidate.isEmpty) {
+        return false;
+      }
+
+      final shorter = target.length <= candidate.length ? target : candidate;
+      final longer = target.length > candidate.length ? target : candidate;
+
+      if (shorter.length >= 5 && longer.contains(shorter)) {
+        return shorter.length / longer.length >= 0.55;
+      }
+
+      return _tokenSimilarity(target, candidate) >= 0.75;
+    }).toList();
+
+    if (similarMatches.isEmpty) {
+      return null;
+    }
+
+    return _mostReliableHistoricalExpense(similarMatches);
+  }
+
+  static Expense _mostReliableHistoricalExpense(List<Expense> matches) {
+    final categoryCounts = <String, int>{};
+
+    for (final expense in matches) {
+      categoryCounts.update(
+        expense.category,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    var bestCategory = matches.first.category;
+    var bestCount = 0;
+
+    for (final entry in categoryCounts.entries) {
+      if (entry.value > bestCount) {
+        bestCategory = entry.key;
+        bestCount = entry.value;
+      }
+    }
+
+    final categoryMatches =
+        matches.where((expense) => expense.category == bestCategory).toList()
+          ..sort((first, second) => second.date.compareTo(first.date));
+
+    return categoryMatches.first;
+  }
+
+  static String _expenseMerchantName(Expense expense) {
+    final merchant = expense.merchant?.trim() ?? '';
+
+    if (merchant.isNotEmpty) {
+      return merchant;
+    }
+
+    return expense.title.trim();
+  }
+
+  static String _normalizeMerchantName(String value) {
+    var normalized = value.toLowerCase().trim();
+
+    normalized = normalized
+        .replaceAll('&', ' and ')
+        .replaceAll(RegExp(r'[^a-z0-9 ]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    const removableWords = <String>{
+      'private',
+      'pvt',
+      'limited',
+      'ltd',
+      'india',
+      'upi',
+      'payment',
+      'payments',
+      'online',
+      'store',
+      'stores',
+    };
+
+    final words = normalized
+        .split(' ')
+        .where((word) => word.isNotEmpty && !removableWords.contains(word))
+        .toList();
+
+    return words.join(' ');
+  }
+
+  static double _tokenSimilarity(String first, String second) {
+    final firstTokens = first
+        .split(' ')
+        .where((token) => token.length >= 2)
+        .toSet();
+
+    final secondTokens = second
+        .split(' ')
+        .where((token) => token.length >= 2)
+        .toSet();
+
+    if (firstTokens.isEmpty || secondTokens.isEmpty) {
+      return 0;
+    }
+
+    final intersection = firstTokens.intersection(secondTokens).length;
+    final union = firstTokens.union(secondTokens).length;
+
+    if (union == 0) {
+      return 0;
+    }
+
+    return intersection / union;
   }
 
   // ------------------------------------------------------------
