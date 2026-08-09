@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/import_review_item.dart';
 import 'import_review/widgets/summary_card.dart';
 import 'import_review/widgets/search_bar.dart';
+import '../widgets/ai_suggestion_card.dart';
 
 enum ImportReviewFilter { needsReview, ready, imported, income, transfers, all }
 
@@ -1031,6 +1032,11 @@ class _ReviewItemCard extends StatelessWidget {
 
             if (item.transactionType == ImportTransactionType.expense) ...[
               const SizedBox(height: 14),
+
+              if (item.aiSuggestion != null) ...[
+                AiSuggestionCard(suggestion: item.aiSuggestion!),
+                const SizedBox(height: 14),
+              ],
 
               DropdownButtonFormField<String>(
                 key: ValueKey(
