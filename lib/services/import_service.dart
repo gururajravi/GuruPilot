@@ -8,6 +8,8 @@ import '../models/import_history.dart';
 import '../models/import_review_item.dart';
 import '../models/import_transaction.dart';
 import '../models/reviewed_transaction.dart';
+
+import 'ai_learning_service.dart';
 import 'expense_service.dart';
 import 'import_history_service.dart';
 import 'merchant_rule_service.dart';
@@ -15,6 +17,10 @@ import 'reviewed_transaction_service.dart';
 
 class ImportService {
   static List<ImportTransaction> importedTransactions = [];
+
+  // ------------------------------------------------------------
+  // Basic Import Statistics
+  // ------------------------------------------------------------
 
   static void clear() {
     importedTransactions.clear();
@@ -48,6 +54,10 @@ class ImportService {
         .fold<double>(0, (sum, transaction) => sum + transaction.amount);
   }
 
+  // ------------------------------------------------------------
+  // Pick PhonePe Excel
+  // ------------------------------------------------------------
+
   static Future<List<ImportTransaction>?> pickAndParsePhonePeExcel() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -69,6 +79,10 @@ class ImportService {
 
     return parsePhonePeExcel(bytes);
   }
+
+  // ------------------------------------------------------------
+  // Parse PhonePe Excel
+  // ------------------------------------------------------------
 
   static List<ImportTransaction> parsePhonePeExcel(Uint8List bytes) {
     final workbook = Excel.decodeBytes(bytes);
@@ -146,6 +160,7 @@ class ImportService {
       );
     }
 
+    // Remove duplicates inside the Excel itself.
     final uniqueTransactions = <String, ImportTransaction>{};
 
     for (final transaction in transactions) {
@@ -157,6 +172,10 @@ class ImportService {
 
     return List<ImportTransaction>.unmodifiable(importedTransactions);
   }
+
+  // ------------------------------------------------------------
+  // Smart Sync / Build Review Items
+  // ------------------------------------------------------------
 
   static List<ImportReviewItem> buildReviewItems() {
     final existingTransactionIds = ExpenseService.getExpenses()
@@ -178,13 +197,20 @@ class ImportService {
         continue;
       }
 
-      // Non-expense decisions already saved locally
-      // should never be shown again.
+      // ----------------------------------------------------------
+      // Already reviewed transfer/income/refund?
+      // Never ask again.
+      // ----------------------------------------------------------
+
       if (reviewedTransactionIds.contains(transactionId)) {
         continue;
       }
 
       final isDuplicate = existingTransactionIds.contains(transactionId);
+
+      // ----------------------------------------------------------
+      // Credits -> Income
+      // ----------------------------------------------------------
 
       if (transaction.isCredit) {
         reviewItems.add(
@@ -197,11 +223,66 @@ class ImportService {
             shouldImport: false,
             isDuplicate: isDuplicate,
             rememberMerchant: false,
+            aiSuggestion: null,
           ),
         );
 
         continue;
       }
+
+      // ----------------------------------------------------------
+      // Refund Detection
+      // ----------------------------------------------------------
+
+      if (_looksLikeRefund(transaction)) {
+        reviewItems.add(
+          ImportReviewItem(
+            transaction: transaction,
+            transactionType: ImportTransactionType.refund,
+            category: 'Uncategorized',
+            person: 'Shared',
+            paymentMethod: 'UPI',
+            shouldImport: false,
+            isDuplicate: isDuplicate,
+            rememberMerchant: false,
+            aiSuggestion: null,
+          ),
+        );
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Person-to-person Transfer Detection
+      // ----------------------------------------------------------
+
+      if (_looksLikePersonTransfer(transaction)) {
+        reviewItems.add(
+          ImportReviewItem(
+            transaction: transaction,
+            transactionType: ImportTransactionType.transfer,
+            category: 'Uncategorized',
+            person: 'Shared',
+            paymentMethod: 'UPI',
+            shouldImport: false,
+            isDuplicate: isDuplicate,
+            rememberMerchant: false,
+            aiSuggestion: null,
+          ),
+        );
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // AI Suggestion
+      // ----------------------------------------------------------
+
+      final aiSuggestion = AiLearningService.suggest(transaction.merchant);
+
+      // ----------------------------------------------------------
+      // Existing exact/saved merchant rule
+      // ----------------------------------------------------------
 
       final merchantRule = MerchantRuleService.suggestRule(
         transaction.merchant,
@@ -218,45 +299,38 @@ class ImportService {
             shouldImport: !isDuplicate,
             isDuplicate: isDuplicate,
             rememberMerchant: true,
+            aiSuggestion: aiSuggestion,
           ),
         );
 
         continue;
       }
 
-      if (_looksLikeRefund(transaction)) {
+      // ----------------------------------------------------------
+      // AI suggestion without direct MerchantRule
+      // ----------------------------------------------------------
+
+      if (aiSuggestion != null) {
         reviewItems.add(
           ImportReviewItem(
             transaction: transaction,
-            transactionType: ImportTransactionType.refund,
-            category: 'Uncategorized',
-            person: 'Shared',
-            paymentMethod: 'UPI',
-            shouldImport: false,
+            transactionType: ImportTransactionType.expense,
+            category: aiSuggestion.category,
+            person: aiSuggestion.person,
+            paymentMethod: aiSuggestion.paymentMethod,
+            shouldImport: !isDuplicate,
             isDuplicate: isDuplicate,
-            rememberMerchant: false,
+            rememberMerchant: true,
+            aiSuggestion: aiSuggestion,
           ),
         );
 
         continue;
       }
 
-      if (_looksLikePersonTransfer(transaction)) {
-        reviewItems.add(
-          ImportReviewItem(
-            transaction: transaction,
-            transactionType: ImportTransactionType.transfer,
-            category: 'Uncategorized',
-            person: 'Shared',
-            paymentMethod: 'UPI',
-            shouldImport: false,
-            isDuplicate: isDuplicate,
-            rememberMerchant: false,
-          ),
-        );
-
-        continue;
-      }
+      // ----------------------------------------------------------
+      // Completely unknown merchant
+      // ----------------------------------------------------------
 
       reviewItems.add(
         ImportReviewItem(
@@ -268,12 +342,17 @@ class ImportService {
           shouldImport: !isDuplicate,
           isDuplicate: isDuplicate,
           rememberMerchant: true,
+          aiSuggestion: null,
         ),
       );
     }
 
     return reviewItems;
   }
+
+  // ------------------------------------------------------------
+  // Import Reviewed Transactions
+  // ------------------------------------------------------------
 
   static Future<ImportResult> importReviewedExpenses(
     Iterable<ImportReviewItem> reviewItems,
@@ -308,6 +387,10 @@ class ImportService {
         continue;
       }
 
+      // ----------------------------------------------------------
+      // Save reviewed Transfer / Income / Refund
+      // ----------------------------------------------------------
+
       if (_isReviewedNonExpense(item.transactionType)) {
         await ReviewedTransactionService.save(
           ReviewedTransaction(
@@ -326,6 +409,10 @@ class ImportService {
         continue;
       }
 
+      // ----------------------------------------------------------
+      // Validate expense
+      // ----------------------------------------------------------
+
       final canImportExpense =
           item.shouldImport &&
           item.transactionType == ImportTransactionType.expense &&
@@ -336,10 +423,18 @@ class ImportService {
         continue;
       }
 
+      // ----------------------------------------------------------
+      // Duplicate check before saving
+      // ----------------------------------------------------------
+
       if (existingTransactionIds.contains(transactionId)) {
         skippedCount++;
         continue;
       }
+
+      // ----------------------------------------------------------
+      // Create expense
+      // ----------------------------------------------------------
 
       final expense = Expense(
         title: transaction.merchant,
@@ -363,6 +458,10 @@ class ImportService {
       importedCount++;
       importedAmount += transaction.amount;
 
+      // ----------------------------------------------------------
+      // Merchant Learning
+      // ----------------------------------------------------------
+
       if (item.rememberMerchant && transaction.merchant.trim().isNotEmpty) {
         await MerchantRuleService.saveRule(
           merchantName: transaction.merchant,
@@ -374,6 +473,10 @@ class ImportService {
         rulesSavedCount++;
       }
     }
+
+    // ------------------------------------------------------------
+    // Save Import History
+    // ------------------------------------------------------------
 
     final completedAt = DateTime.now();
 
@@ -409,11 +512,19 @@ class ImportService {
     );
   }
 
+  // ------------------------------------------------------------
+  // Reviewed Non-expense Helper
+  // ------------------------------------------------------------
+
   static bool _isReviewedNonExpense(ImportTransactionType type) {
     return type == ImportTransactionType.transfer ||
         type == ImportTransactionType.income ||
         type == ImportTransactionType.refund;
   }
+
+  // ------------------------------------------------------------
+  // Expense Notes
+  // ------------------------------------------------------------
 
   static String _buildImportNotes(ImportTransaction transaction) {
     final parts = <String>['Imported from PhonePe'];
@@ -428,6 +539,10 @@ class ImportService {
 
     return parts.join(' • ');
   }
+
+  // ------------------------------------------------------------
+  // Reviewed Transaction Notes
+  // ------------------------------------------------------------
 
   static String _buildReviewedNotes(
     ImportTransaction transaction,
@@ -446,6 +561,10 @@ class ImportService {
     return parts.join(' • ');
   }
 
+  // ------------------------------------------------------------
+  // Import History Notes
+  // ------------------------------------------------------------
+
   static String _buildHistoryNotes({
     required int importedCount,
     required int reviewedCount,
@@ -463,6 +582,10 @@ class ImportService {
         'and saved $rulesSavedCount merchant rule'
         '${rulesSavedCount == 1 ? '' : 's'}.';
   }
+
+  // ------------------------------------------------------------
+  // Person Transfer Detection
+  // ------------------------------------------------------------
 
   static bool _looksLikePersonTransfer(ImportTransaction transaction) {
     final merchant = transaction.merchant.trim().toLowerCase();
@@ -496,6 +619,10 @@ class ImportService {
         containsPersonKeyword;
   }
 
+  // ------------------------------------------------------------
+  // Refund Detection
+  // ------------------------------------------------------------
+
   static bool _looksLikeRefund(ImportTransaction transaction) {
     final description = transaction.description.toLowerCase();
 
@@ -503,6 +630,10 @@ class ImportService {
         description.contains('reversal') ||
         description.contains('reversed');
   }
+
+  // ------------------------------------------------------------
+  // Excel Cell Text
+  // ------------------------------------------------------------
 
   static String _cellText(List<Data?> row, int columnIndex) {
     if (columnIndex < 0 || columnIndex >= row.length) {
@@ -542,6 +673,10 @@ class ImportService {
     }
   }
 
+  // ------------------------------------------------------------
+  // Excel Cell Number
+  // ------------------------------------------------------------
+
   static double? _cellNumber(List<Data?> row, int columnIndex) {
     if (columnIndex < 0 || columnIndex >= row.length) {
       return null;
@@ -571,6 +706,10 @@ class ImportService {
     }
   }
 
+  // ------------------------------------------------------------
+  // Amount Parser
+  // ------------------------------------------------------------
+
   static double? _parseAmount(String value) {
     final cleaned = value
         .replaceAll('₹', '')
@@ -580,6 +719,10 @@ class ImportService {
 
     return double.tryParse(cleaned);
   }
+
+  // ------------------------------------------------------------
+  // PhonePe Date Parser
+  // ------------------------------------------------------------
 
   static DateTime? _parsePhonePeDate(String value) {
     final normalized = value
@@ -646,6 +789,10 @@ class ImportService {
     return DateTime.tryParse(normalized);
   }
 
+  // ------------------------------------------------------------
+  // Merchant Extraction
+  // ------------------------------------------------------------
+
   static String _extractMerchant(String details) {
     final normalized = details.replaceAll('\r\n', '\n').trim();
 
@@ -667,6 +814,10 @@ class ImportService {
         .trim();
   }
 
+  // ------------------------------------------------------------
+  // Transaction ID Extraction
+  // ------------------------------------------------------------
+
   static String _extractTransactionId(String details) {
     final match = RegExp(
       r'Transaction\s*ID\s*:\s*'
@@ -676,6 +827,10 @@ class ImportService {
 
     return match?.group(1)?.trim() ?? '';
   }
+
+  // ------------------------------------------------------------
+  // UTR Extraction
+  // ------------------------------------------------------------
 
   static String _extractUtr(String value) {
     final match = RegExp(
@@ -687,6 +842,10 @@ class ImportService {
     return match?.group(1)?.trim() ?? '';
   }
 
+  // ------------------------------------------------------------
+  // Account Extraction
+  // ------------------------------------------------------------
+
   static String _extractAccount(String value) {
     return value
         .replaceFirst(
@@ -696,6 +855,10 @@ class ImportService {
         .trim();
   }
 }
+
+// --------------------------------------------------------------
+// Import Result
+// --------------------------------------------------------------
 
 class ImportResult {
   final int importedCount;

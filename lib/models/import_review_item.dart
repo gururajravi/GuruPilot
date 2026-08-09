@@ -1,4 +1,5 @@
 import 'import_transaction.dart';
+import 'ai_suggestion.dart';
 
 enum ImportTransactionType { expense, transfer, income, refund, unknown }
 
@@ -18,7 +19,7 @@ class ImportReviewItem {
   final bool isDuplicate;
 
   final bool rememberMerchant;
-
+  final AiSuggestion? aiSuggestion;
   const ImportReviewItem({
     required this.transaction,
     this.transactionType = ImportTransactionType.unknown,
@@ -28,6 +29,7 @@ class ImportReviewItem {
     this.shouldImport = true,
     this.isDuplicate = false,
     this.rememberMerchant = true,
+    this.aiSuggestion,
   });
 
   ImportReviewItem copyWith({
@@ -39,6 +41,7 @@ class ImportReviewItem {
     bool? shouldImport,
     bool? isDuplicate,
     bool? rememberMerchant,
+    AiSuggestion? aiSuggestion,
   }) {
     return ImportReviewItem(
       transaction: transaction ?? this.transaction,
@@ -49,6 +52,7 @@ class ImportReviewItem {
       shouldImport: shouldImport ?? this.shouldImport,
       isDuplicate: isDuplicate ?? this.isDuplicate,
       rememberMerchant: rememberMerchant ?? this.rememberMerchant,
+      aiSuggestion: aiSuggestion ?? this.aiSuggestion,
     );
   }
 }
